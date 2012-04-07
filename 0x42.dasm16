@@ -1,0 +1,661 @@
+; 0x42.dasm16
+; Created by trevs231
+
+  SET PC, main_inits
+
+;Static Variables and data-------------------------
+:SCRN_START DAT 0x8000 ;first screen location
+:SCRN_END DAT 0x81FF  ;last screen location
+
+:KBRD_BUFFER DAT 0x9000  ;where inputs are read from keyboard
+
+:SYS_START_MSG  ;logo at startup
+DAT "     ___       _  _ ___         "
+DAT "    /   \\     | || |__ \\        "
+DAT "   | | | |_  _| || |_ ) |___    "
+DAT "   | | | \\ \\/ /__   _/ // __|   "
+DAT "   | |_| |>  <   | |/ /| (__    "
+DAT "    \\___//_/\\_\\  |_|____\\___|   "
+DAT " THE FOUNDATION OF AN OPERATING "
+DAT "     SYSTEM FOR THE DCPU-16     "
+DAT "  Variation by trevs231   " , 0
+
+
+;Program start -------------------------------
+:main_inits
+  SET [COLOUR], 0xF000  ;white on black
+
+  SET C, [KBRD_BUFFER];clearing keyboard buffer
+  SET [c], 0
+  SET C, 0
+
+  JSR clrscrn        ;clearing screen
+  SET B, SYS_START_MSG
+  JSR printDAT     ; shows logo
+
+ ;Main loop-----------------------
+:main
+
+  JSR COMMAND_LINE
+
+  SET PC, main     ;repeat main
+
+
+:EXIT
+  SET J, 0x40
+:crash
+  SET PC, crash
+; end of main section-----------------
+
+
+
+
+;Subroutines----------------------------------------
+
+;command line prompts. text is the command
+;                        number is the mode
+:EXIT_COMMAND DAT "EXIT", 0, 1
+:TEST_CMD_1 DAT "CMD1", 0, 2
+:TEST_CMD_2 DAT "CMD2", 0, 3
+
+;COMMAND LINE SUBROUTINES-------------------
+
+;compares input to commands and executes command
+:COMMAND_LINE
+  SET PUSH, A
+  SET PUSH, B
+  SET PUSH, i
+  JSR getLine
+
+  IFE [LINE_BUFFER], 0           ; nothign in buffer
+      SET PC, COMMAND_LINE_DONE
+                                  ;go through commands
+  SET B, EXIT_COMMAND
+  JSR COMMAND_LINE_COMPARE
+  SET B, TEST_CMD_1
+  JSR COMMAND_LINE_COMPARE
+  SET B, TEST_CMD_2
+  JSR COMMAND_LINE_COMPARE
+
+  SET A, 0               ; invalid command
+
+:COMMAND_LINE_RUN      ;jumps to selected command
+  MUL A, 4
+  ADD PC, A
+  JSR CMD_ERROR
+  SET PC, COMMAND_LINE_DONE
+
+  JSR EXIT_COMMAND_SR
+  SET PC, COMMAND_LINE_DONE
+
+  JSR TEST_CMD_1_SR
+  SET PC, COMMAND_LINE_DONE
+
+  JSR TEST_CMD_2_SR
+
+:COMMAND_LINE_DONE
+  SET i, POP
+  SET B, POP
+  SET A, POP
+  SET PC, POP
+
+
+
+
+;compares command at B with buffer
+;returns to COMMAND_CHECK list if false
+;returns to
+:COMMAND_LINE_COMPARE
+  SET i, 0
+:COMMAND_LINE_COMPARE_LOOP
+  IFE [LINE_BUFFER+i], 0         ;end of buffer?
+      SET PC, COMMAND_LINE_COMPARE_DONE
+  IFE [B], 0                      ;end of CMD?
+      SET PC, COMMAND_LINE_COMPARE_FALSE
+  IFN [LINE_BUFFER+i], [B]
+      SET PC, COMMAND_LINE_COMPARE_FALSE
+  ADD i, 1
+  ADD B, 1
+  SET PC, COMMAND_LINE_COMPARE_LOOP
+
+:COMMAND_LINE_COMPARE_FALSE
+  SET PC, POP
+
+:COMMAND_LINE_COMPARE_DONE
+  ADD B, 1
+  SET A, [B]   ;sets A to mode
+  IFE i, 0
+      SET A, 0
+  SET POP, 0     ;gets rid of old place, garbage
+  SET PC, COMMAND_LINE_RUN
+
+
+
+ ;COMMANDS---------------
+
+ ;prints an error
+:CMD_ERROR_MSG DAT "INVALID COMMAND", 0
+:CMD_ERROR
+  SET PUSH, B
+  JSR newLine
+  SET B, CMD_ERROR_MSG
+  JSR printDAT
+  SET B, POP
+  SET PC, POP
+
+ ;exits the Command program
+:EXIT_COMMAND_MSG DAT "EXITING...", 0
+:EXIT_COMMAND_SR
+  SET PUSH, B
+  JSR newLine
+  SET B, EXIT_COMMAND_MSG
+  JSR printDAT
+  SET B, POP
+  SET POP, 0
+  SET i, POP
+  SET B, POP
+  SET A, POP
+  SET POP, 0
+  SET PC, EXIT
+
+ ;a set command
+:TEST_CMD_1_MSG DAT "This is command 1" , 0
+:TEST_CMD_1_SR
+  SET PUSH, B
+  JSR newLine
+  SET B, TEST_CMD_1_MSG
+  JSR printDAT
+  SET B, POP
+  SET PC, POP
+
+ ;another test command
+:TEST_CMD_2_MSG DAT "This is command 2" , 0
+:TEST_CMD_2_SR
+  SET PUSH, B
+  JSR newLine
+  SET B, TEST_CMD_2_MSG
+  JSR printDAT
+  SET B, POP
+  SET PC, POP
+
+
+
+
+
+;SCREEN SUBROUTINES-----------------------------
+; known format: in video ram:
+; (4 Letter bits)(4 background bits)
+; (1 flashing)(7 ascii bits):
+; (HRGB HRGB)|(ASCII)
+
+:COLOUR RESERVE 1  ; 0x(HRGB HRGB)(8 or 0)0
+:SCRN_LCN RESERVE 1  ;0x8000 - 0x81FF
+:SCRN_CHAR RESERVE 1  ;some ASCII value
+
+
+;Prints number in A in decimal
+:printNum
+  SET PUSH, i
+  SET PUSH, j
+  SET PUSH, x
+  SET PUSH, y
+  SET PUSH, O
+
+  SET j, 0
+  SET y, 10000
+  SET i, A
+
+:printNum_loop
+  DIV i, y
+
+  SET x, i    ;saving already printed
+  MUL x, y
+  ADD j, x
+
+  ADD i, 0x30
+  SET [SCRN_CHAR], i
+  JSR printChar
+
+  SET i, A
+  SUB i, j
+  DIV y, 10
+
+  IFN y, 0
+     SET PC, printNum_loop
+
+
+  SET O, POP
+  SET y, POP
+  SET x, POP
+  SET j, POP
+  SET i, POP
+  SET PC, POP
+
+
+
+
+
+
+
+;prints string at the location pointed to by B
+; string must be followed by a 0
+:printDAT
+
+:printDAT_loop    ;prints each char until 0
+  IFE [B], 0
+      SET PC, printDAT_done
+  SET [SCRN_CHAR], [B]
+  JSR printChar
+  ADD B, 1
+  SET PC, printDAT_loop
+
+:printDAT_done
+   SET PC, POP
+
+
+
+
+
+
+;takes values in COLOUR, and writes character
+;in SCRN_CHAR to the location SCRN_LCN
+;COLOUR should be 0xzz00 for regular
+; and 0xzz80 for flashing
+;increments screen index after
+
+:printChar
+   SET PUSH, A
+   SET PUSH, B
+   SET PUSH, O
+
+
+  ;checking validity of location
+  IFG [SCRN_START], [SCRN_LCN]
+      SET PC, printChar_smallLCN
+  IFG [SCRN_LCN], [SCRN_END]
+      SET PC, printChar_bigLCN
+
+  SET PC, printChar_okLCN
+
+ :printChar_smallLCN
+  JSR clrSCRN
+  SET PC, printChar_okLCN
+:printChar_bigLCN
+  JSR newLine
+:printChar_okLCN
+
+   ;setting values into one location
+   SET A, [SCRN_LCN]
+   SET B, [COLOUR]
+   BOR B, [SCRN_CHAR]
+   ;printing value
+   SET [A], B
+
+   ;increment location
+   ADD [SCRN_LCN], 1
+
+   SET O, POP
+   SET B, POP
+   SET A, POP
+   SET PC, POP
+
+
+
+;Sets LCRN_LCN to the next line
+;If on the last line, pushes all lines up one
+;  then clears the bottom
+:newLine
+  SET PUSH, A
+
+  SET A, [SCRN_LCN]
+  MOD A, 32        ;column
+  SUB [SCRN_LCN], A
+  ADD [SCRN_LCN], 32  ;now at beginning of NL
+
+  SET A, 2        ;in case of screen shift
+  IFG [SCRN_LCN], [SCRN_END]
+      SET PC, newLine_off
+
+:newLine_end
+  SET A, POP
+  SET PC, POP
+
+:newLine_off
+  SET A, 2        ;shift up by 2
+  JSR shiftSCRN
+  SET A, [SCRN_END]
+  SUB A, 0x3F
+  SET [SCRN_LCN], A
+  SET PC, newLine_end
+
+
+
+;Takes value in A and shifts the screen up
+;  by that many lines
+:shiftSCRN
+  SET PUSH, i
+  SET PUSH, j
+  SET PUSH, z
+
+  IFE A, 0;do nothing if A=0
+      SET PC, shiftSCRN_done
+  IFG A, 16
+      SET PC, clrSCRN   ;will clear screen if A too big
+
+
+  SET j, [SCRN_START] ;location to copy
+  SET z, j
+  SET i, 32
+  MUL i, A
+  ADD j, i            ;location to rewrite
+
+
+:shiftSCRN_loop       ;rewrite chars
+  IFG j, [SCRN_END]
+      SET PC, shiftSCRN_clear
+  SET [Z], [j]
+  ADD z, 1
+  ADD j, 1
+  SET PC, shiftSCRN_loop
+
+:shiftSCRN_clear     ;clear the rest of the screen
+  SET [z], [COLOUR]
+  ADD z, 1
+  IFG z, [SCRN_END]
+      SET PC, shiftSCRN_done
+  SET PC, shiftSCRN_clear
+
+  SET i, [SCRN_LCN]
+  MOD i, 32        ;column
+  SUB [SCRN_LCN], i
+  SUB A, 1
+  MUL A, 32
+  SUB [SCRN_LCN], A
+
+:shiftSCRN_done
+  SET z, POP
+  SET j, POP
+  SET i, POP
+  SET PC, POP
+
+
+;Clears screen background.
+;uses background color in COLOUR
+;resets SCRN_LCN to the first location
+
+:clrSCRN
+  SET PUSH, A
+  SET PUSH, i
+
+  ;setting iteration
+  SET i, [SCRN_START]
+  SET A, [COLOUR]
+
+:clrSCRN_loop
+  SET [i], A
+  ADD i, 1
+  IFN i, [SCRN_END]
+      SET PC, clrSCRN_loop
+  SET [i], A
+
+  SET [SCRN_LCN], [SCRN_START]
+
+  SET i, POP
+  SET A, POP
+  SET PC, POP
+
+
+
+
+;KEYBOARD SUBROUTINES--------------------------------
+
+:LINE_BUFFER RESERVE 31  ;30 values, and a required 0 at end
+
+
+
+;Gets one line of info from keyboard, finished after ENTER
+;Returns ASCII values in LINE_BUFFER
+;Also if the value entered only contains numbers
+;  the first 4 will be taken (so max 9999 )
+;  and their value will be saved in A
+:getLine
+  SET PUSH, i
+  SET PUSH, j
+  SET PUSH, B
+
+  JSR newLine
+  SET j, 0    ;number of entries
+  SET i, [SCRN_LCN]
+  ADD i, 0x1F       ;limit to how much can be typed
+
+  SET [SCRN_CHAR], 62 ;>
+  JSR printChar
+
+:getLine_loop
+  IFE [SCRN_LCN], i           ;checking if line is full
+      SET PC, getLine_lineFull
+
+  JSR key_CharIn
+
+  IFE B, 10          ;if it is ENTER/nl
+      SET PC, getLine_ENTER
+
+  SET PC, getLine_loop
+
+:getLine_lineFull
+  SUB [SCRN_LCN], 1
+  SET [SCRN_CHAR], 32    ; erase last entry
+  JSR printChar
+  SUB [SCRN_LCN], 1
+  SET PC, getLine_loop
+
+
+:getLine_ENTER
+  SUB [SCRN_LCN], 2
+  SET j, [SCRN_LCN]
+  MOD j, 32       ;how many items
+  SET B, j        ;for math computation later
+  SET i, [SCRN_LCN]
+  SET [LINE_BUFFER+j], 0  ;end of line
+
+:getLine_ENTERloop
+  IFE j, 0
+      SET PC, getLine_math
+
+  SUB j, 1
+  SET [LINE_BUFFER+j], [i]   ;iterating, copying values
+  AND [LINE_BUFFER+j], 0xFF
+
+  IFG [LINE_BUFFER+j], 0x39           ; no math if letters
+      SET B, 0
+  IFG 0x30, [LINE_BUFFER+j]
+      SET B, 0
+
+  SUB i, 1
+  SET PC, getLine_ENTERloop
+
+:getLine_math  ;for computing the number to save in A
+  SET A, 0
+  SET i, 1     ;multiplication factor
+  IFG B, 4
+      SET B, 4
+:getLine_mathLoop
+  IFE B, 0
+      SET PC, getLine_done
+
+  SUB B, 1
+  SET j, [LINE_BUFFER+B]
+  SUB j, 0x30
+  MUL j, i
+  MUL i, 10
+  ADD A, j
+  SET PC, getLine_mathLoop
+
+
+:getLine_done
+  SET B, POP
+  SET j, POP
+  SET i, POP
+  SET PC, POP
+
+
+
+
+
+
+
+
+
+;used for taking ASCII values from keyboard
+;prints the value on screen stores value in B
+;8 for bs 10 for nl
+
+:key_CharIn
+  SET PUSH, C
+
+  SET C, [KBRD_BUFFER] ;where input will appear
+:key_CharIn_loop
+  SET B, [C]
+  IFE B, 0           ;no value in buffer
+      SET PC, key_CharIn_loop
+
+  SET [C], 0
+
+  IFE B, 8 ;backspace
+      SET PC, key_CharIn_bs
+
+  SET [SCRN_CHAR], B
+  JSR printChar
+
+  SET C, POP
+  SET PC, POP
+
+:key_CharIn_bs
+  SUB [SCRN_LCN], 1
+  SET [SCRN_CHAR], 32    ; erase last entry
+  JSR printChar
+  SUB [SCRN_LCN], 1
+  SET PC, key_CharIn_loop
+
+
+;32bit MATH----------------------------
+:MATH1 RESERVE 2
+:MATH2 RESERVE 2
+:MUL_ANS RESERVE 4
+
+
+
+;addition
+;performs MATH1+MATH2
+;Result stored in MATH1
+; O is set to 0x1 if overflow. 0x0 otherwise
+
+:ADD32
+  SET PUSH, X
+  SET PUSH, I
+  SET I, 1
+
+  ADD [MATH1+I], [MATH2+I]   ;adding lower words
+  ADD [MATH1], O   ;carry?
+  SET X, O   ;carry?
+  ADD [MATH1], [MATH2]   ;adding upper words
+  ADD O, X   ;carry?
+
+  SET I, POP
+  SET X, POP
+  SET PC, POP
+
+
+
+;subtraction
+;performs MATH1-MATH2
+;Result stored in MATH1
+; O set to  0xFFFF for underflow, 0x0 otherwise
+
+:SUB32
+  SET PUSH, X
+  SET PUSH, I
+  SET I, 1
+
+  SUB [MATH1+I], [MATH2+I]   ;sub lower words
+  SUB [MATH2], O   ;borrow?
+  SET X, O   ;borrow?
+  SUB [MATH1], [MATH2]   ;sub upper words
+  SUB O, X   ;borrow?
+  SUB O, 1   ;borrow?
+
+  SET I, POP
+  SET X, POP
+  SET PC, POP
+
+
+
+;multiplication
+;performs MATH1*MATH2
+;stores result in MUL_ANS
+
+:MUL32
+  SET PUSH, I
+  SET PUSH, J
+
+  SET I, 1
+  SET J, 3
+  SET PUSH, [MATH1+I]
+  MUL [MATH1+I], [MATH2+I] ;multiply 1
+  SET [MUL_ANS+J], [MATH1+I]
+  SET [MATH1+I], POP
+  SET J, 2
+  SET [MUL_ANS+J], O
+
+  SET PUSH, [MATH1]
+  MUL [MATH1], [MATH2+I]   ;Multiply 2
+  SET [MUL_ANS+I], O
+  ADD [MUL_ANS+J], [MATH1]
+  SET [MATH1], POP
+  ADD [MUL_ANS+I], O
+  SET [MUL_ANS], O
+
+  MUL [MATH1+I], [MATH2] ;MULTIPLY 3
+  ADD [MUL_ANS+I], O
+  ADD [MUL_ANS], O
+  ADD [MUL_ANS+J], [MATH1+I]
+  ADD [MUL_ANS+I], O
+  ADD [MUL_ANS], O
+
+  MUL [MATH1], [MATH2]  ;multiply 4
+  ADD [MUL_ANS], O
+  ADD [MUL_ANS+I], [MATH1]
+  ADD [MUL_ANS], O
+
+  SET J, POP
+  SET I, POP
+  SET PC, POP
+
+
+;MISC SUBROUTINES-------------------------------
+
+
+;waits B ms (assuming a 100kHz clock)
+; thats 100 cycles per B
+:waitBms
+  SET PUSH, A
+
+:waitBms_loop1
+  IFE B, 0        ;2c
+      SET PC, waitBms_done
+  SUB B, 1        ;2c
+  SET A, 19     ; 1c
+:waitBms_loop2
+  SUB A, 1        ;2c
+  IFN A, 0        ;2c/3c
+      SET PC, waitBms_loop2   ;1c
+  SET PC, waitBms_loop1  ; 1c
+
+:waitBms_done
+  SET A, POP
+  SET PC, POP
+
+
+
+
+
