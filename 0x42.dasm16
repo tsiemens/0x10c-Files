@@ -1,5 +1,5 @@
 ; 0x42.dasm16
-; v0.1
+; v0.1.1
 ; Created by trevs231
 
   SET PC, main_inits
@@ -19,7 +19,9 @@ DAT "   | |_| |>  <   | |/ /| (__    "
 DAT "    \\___//_/\\_\\  |_|____\\___|   "
 DAT " THE FOUNDATION OF AN OPERATING "
 DAT "     SYSTEM FOR THE DCPU-16     "
-DAT " Fork by trevs231       v0.1    " , 0
+DAT " Fork by trevs231        v0.1.1 "
+DAT " type 'help' for a              "
+DAT " list of commands               ", 0
 
 
 ;Program start -------------------------------
@@ -38,11 +40,11 @@ DAT " Fork by trevs231       v0.1    " , 0
 :main
 
   JSR COMMAND_LINE
-
   SET PC, main     ;repeat main
-
-
 :EXIT
+
+
+
   SET J, 0x40
 :crash
   SET PC, crash
@@ -55,9 +57,10 @@ DAT " Fork by trevs231       v0.1    " , 0
 
 ;command line prompts. text is the command
 ;                        number is the mode
-:EXIT_COMMAND DAT "EXIT", 0, 1
-:TEST_CMD_1 DAT "CMD1", 0, 2
-:TEST_CMD_2 DAT "CMD2", 0, 3
+:EXIT_COMMAND DAT "exit", 0, 1   ;must be first
+:HELP_COMMAND DAT "help", 0, 2
+:TEST_CMD_1 DAT "cmd1", 0, 3
+:TEST_CMD_2 DAT "cmd2", 0, 4, 0
 
 ;COMMAND LINE SUBROUTINES-------------------
 
@@ -73,8 +76,13 @@ DAT " Fork by trevs231       v0.1    " , 0
                                   ;go through commands
   SET B, EXIT_COMMAND
   JSR COMMAND_LINE_COMPARE
+
+  SET B, HELP_COMMAND
+  JSR COMMAND_LINE_COMPARE
+
   SET B, TEST_CMD_1
   JSR COMMAND_LINE_COMPARE
+
   SET B, TEST_CMD_2
   JSR COMMAND_LINE_COMPARE
 
@@ -83,10 +91,13 @@ DAT " Fork by trevs231       v0.1    " , 0
 :COMMAND_LINE_RUN      ;jumps to selected command
   MUL A, 4
   ADD PC, A
-  JSR CMD_ERROR
+  JSR CMD_ERROR_SR
   SET PC, COMMAND_LINE_DONE
 
   JSR EXIT_COMMAND_SR
+  SET PC, COMMAND_LINE_DONE
+
+  JSR HELP_COMMAND_SR
   SET PC, COMMAND_LINE_DONE
 
   JSR TEST_CMD_1_SR
@@ -132,11 +143,11 @@ DAT " Fork by trevs231       v0.1    " , 0
 
 
 
- ;COMMANDS---------------
+;COMMANDS---------------------
 
  ;prints an error
-:CMD_ERROR_MSG DAT "INVALID COMMAND", 0
-:CMD_ERROR
+:CMD_ERROR_MSG DAT "command not recognized", 0
+:CMD_ERROR_SR
   SET PUSH, B
   JSR newLine
   SET B, CMD_ERROR_MSG
@@ -144,8 +155,10 @@ DAT " Fork by trevs231       v0.1    " , 0
   SET B, POP
   SET PC, POP
 
+
+
  ;exits the Command program
-:EXIT_COMMAND_MSG DAT "EXITING...", 0
+:EXIT_COMMAND_MSG DAT "exiting...", 0
 :EXIT_COMMAND_SR
   SET PUSH, B
   JSR newLine
@@ -158,6 +171,27 @@ DAT " Fork by trevs231       v0.1    " , 0
   SET A, POP
   SET POP, 0
   SET PC, EXIT
+
+
+  ;prints commands that can be used
+:HELP_COMMAND_MSG DAT "available commands:", 0
+:HELP_COMMAND_SR
+  SET PUSH, B
+  JSR newLine
+  SET B, HELP_COMMAND_MSG
+  JSR printDAT
+
+  SET B, EXIT_COMMAND
+:HELP_COMMAND_loop
+  JSR newLine
+  JSR printDAT
+  ADD B, 2
+  IFN [B], 0
+      SET PC, HELP_COMMAND_loop
+
+  SET B, POP
+  SET PC, POP
+
 
  ;a set command
 :TEST_CMD_1_MSG DAT "This is command 1" , 0
