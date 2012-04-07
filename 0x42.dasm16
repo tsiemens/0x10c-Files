@@ -1,4 +1,5 @@
 ; 0x42.dasm16
+; v0.1
 ; Created by trevs231
 
   SET PC, main_inits
@@ -18,7 +19,7 @@ DAT "   | |_| |>  <   | |/ /| (__    "
 DAT "    \\___//_/\\_\\  |_|____\\___|   "
 DAT " THE FOUNDATION OF AN OPERATING "
 DAT "     SYSTEM FOR THE DCPU-16     "
-DAT "  Variation by trevs231   " , 0
+DAT " Fork by trevs231       v0.1    " , 0
 
 
 ;Program start -------------------------------
