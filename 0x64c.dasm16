@@ -1,4 +1,4 @@
-; 0x42.dasm16
+; 0x64c.dasm16
 ; v0.2
 ; Created by Pseudox/trevs231
 
@@ -11,12 +11,12 @@
 :KBRD_BUFFER DAT 0x9000  ;where inputs are read from keyboard
 
 :SYS_START_MSG  ;logo at startup
-DAT "     ___       _  _ ___         "
-DAT "    /   \\     | || |__ \\        "
-DAT "   | | | |_  _| || |_ ) |___    "
-DAT "   | | | \\ \\/ /__   _/ // __|   "
-DAT "   | |_| |>  <   | |/ /| (__    "
-DAT "    \\___//_/\\_\\  |_|____\\___|   "
+DAT "    ___        ___  _  _        "
+DAT "   /   \\      / __|| || |       "
+DAT "  | | | |_  _| |__ | || |_ ___  "
+DAT "  | | | \\ \\/ /  _ \\|__   _/ __| "
+DAT "  | |_| |>  <| |_| |  | || (__  "
+DAT "   \\___//_/\\_\\\\___/   |_| \\___| "
 DAT " THE FOUNDATION OF AN OPERATING "
 DAT "     SYSTEM FOR THE DCPU-16     "
 DAT "   by Pseudox/trevs231  v0.1.2  ", 0
