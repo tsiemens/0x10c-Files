@@ -1,6 +1,6 @@
 ; 0x42.dasm16
-; v0.1.1
-; Created by trevs231
+; v0.2
+; Created by Pseudox/trevs231
 
   SET PC, main_inits
 
@@ -19,36 +19,73 @@ DAT "   | |_| |>  <   | |/ /| (__    "
 DAT "    \\___//_/\\_\\  |_|____\\___|   "
 DAT " THE FOUNDATION OF AN OPERATING "
 DAT "     SYSTEM FOR THE DCPU-16     "
-DAT " Fork by trevs231        v0.1.1 "
-DAT " type 'help' for a              "
-DAT " list of commands               ", 0
+DAT "   by Pseudox/trevs231  v0.1.2  ", 0
+
+:COMMAND_INIT_MSG
+DAT " Type 'help' for a list of      "
+DAT " commands     64k RAM    k free ", 0
 
 
 ;Program start -------------------------------
 :main_inits
-  SET [COLOUR], 0xF000  ;white on black
+    SET [COLOUR], 0xF000  ;white on black
 
-  SET C, [KBRD_BUFFER];clearing keyboard buffer
-  SET [c], 0
-  SET C, 0
+    SET C, [KBRD_BUFFER];clearing keyboard buffer
+    SET [c], 0
+    SET C, 0
 
-  JSR clrscrn        ;clearing screen
-  SET B, SYS_START_MSG
-  JSR printDAT     ; shows logo
+;checking free RAM
+    SET j, 0
+    SET i, 0xFFFF
+:init_RAM_check_loop
+    IFE [i], 0
+        ADD j, 1
+    SUB i, 1
+    IFN i, 0
+        SET PC, init_RAM_check_loop
 
- ;Main loop-----------------------
+    DIV j, 1000
+    SET A, j
+    MOD j, 10  ;ones
+    DIV A, 10  ;tens
+    ADD j, 0x30
+    ADD A, 0x30
+
+
+    JSR clrscrn        ;clearing screen
+    SET B, SYS_START_MSG
+    JSR printDAT     ; shows logo
+
+    SET [SLEEP_DURATION], 0xA000
+    JSR sleep
+    JSR sleep
+
+    JSR clrscrn        ;clearing screen
+    SET B, COMMAND_INIT_MSG
+    JSR printDAT
+
+    SUB [SCRN_LCN], 9
+    SET [SCRN_CHAR], A
+    JSR printChar
+    SET [SCRN_CHAR], j
+    JSR printChar
+    ADD [SCRN_LCN], 7
+
+
+
+ ;Main loop--------------------------------------------
 :main
 
-  JSR COMMAND_LINE
-  SET PC, main     ;repeat main
-:EXIT
 
+    JSR COMMAND_LINE
+    SET PC, main     ;repeat main
+:EXIT
 
 
   SET J, 0x40
 :crash
   SET PC, crash
-; end of main section-----------------
+; end of main section---------------------------------
 
 
 
@@ -59,8 +96,7 @@ DAT " list of commands               ", 0
 ;                        number is the mode
 :EXIT_COMMAND DAT "exit", 0, 1   ;must be first
 :HELP_COMMAND DAT "help", 0, 2
-:TEST_CMD_1 DAT "cmd1", 0, 3
-:TEST_CMD_2 DAT "cmd2", 0, 4, 0
+:MINECRAFT_COMMAND DAT "minecraft", 0, 3, 0 ;must end in 0
 
 ;COMMAND LINE SUBROUTINES-------------------
 
@@ -80,10 +116,7 @@ DAT " list of commands               ", 0
   SET B, HELP_COMMAND
   JSR COMMAND_LINE_COMPARE
 
-  SET B, TEST_CMD_1
-  JSR COMMAND_LINE_COMPARE
-
-  SET B, TEST_CMD_2
+  SET B, MINECRAFT_COMMAND
   JSR COMMAND_LINE_COMPARE
 
   SET A, 0               ; invalid command
@@ -100,10 +133,7 @@ DAT " list of commands               ", 0
   JSR HELP_COMMAND_SR
   SET PC, COMMAND_LINE_DONE
 
-  JSR TEST_CMD_1_SR
-  SET PC, COMMAND_LINE_DONE
-
-  JSR TEST_CMD_2_SR
+  JSR MINECRAFT_COMMAND_SR
 
 :COMMAND_LINE_DONE
   SET i, POP
@@ -193,25 +223,30 @@ DAT " list of commands               ", 0
   SET PC, POP
 
 
- ;a set command
-:TEST_CMD_1_MSG DAT "This is command 1" , 0
-:TEST_CMD_1_SR
-  SET PUSH, B
-  JSR newLine
-  SET B, TEST_CMD_1_MSG
-  JSR printDAT
-  SET B, POP
-  SET PC, POP
+;begins the MINECRAFT GAME
+:MINECRAFT_START_SCREEN
+DAT " MINECRAFT for DCPU-16  v1.0    "
+DAT "      by Pseudox/trevs231", 0
+:MINECRAFT_INSTRUCTIONS
+DAT " p - quit     r - restart       "
+DAT " w,a,s,d - place/remove blocks  "
+DAT " arrow keys - move", 0
 
- ;another test command
-:TEST_CMD_2_MSG DAT "This is command 2" , 0
-:TEST_CMD_2_SR
-  SET PUSH, B
-  JSR newLine
-  SET B, TEST_CMD_2_MSG
-  JSR printDAT
-  SET B, POP
-  SET PC, POP
+:MINECRAFT_COMMAND_SR
+   JSR clrSCRN
+   SET [SCRN_LCN], 0x8080           ;print title screen
+   SET B, MINECRAFT_START_SCREEN
+   JSR printDAT
+   JSR newLine
+   SET B, MINECRAFT_INSTRUCTIONS
+   JSR printDAT
+   SET [SLEEP_DURATION], 0xD000
+   JSR sleep
+   JSR sleep
+   JSR MINECRAFT_init      ;play minecraft! :D
+   JSR clrSCRN
+   SET PC, POP
+
 
 
 
@@ -546,31 +581,47 @@ DAT " list of commands               ", 0
 ;8 for bs 10 for nl
 
 :key_CharIn
-  SET PUSH, C
+    SET PUSH, C
 
-  SET C, [KBRD_BUFFER] ;where input will appear
+    SET C, [KBRD_BUFFER] ;where input will appear
+
+    SET [SCRN_CHAR], 95   ;show cursor
+    JSR printChar
+    SUB [SCRN_LCN], 1
+
 :key_CharIn_loop
-  SET B, [C]
-  IFE B, 0           ;no value in buffer
-      SET PC, key_CharIn_loop
+    SET B, [C]
+    IFE B, 0           ;no value in buffer
+        SET PC, key_CharIn_loop
 
-  SET [C], 0
+    SET [C], 0
 
-  IFE B, 8 ;backspace
-      SET PC, key_CharIn_bs
+    IFE B, 8 ;backspace
+        SET PC, key_CharIn_bs
 
-  SET [SCRN_CHAR], B
-  JSR printChar
+    SET [SCRN_CHAR], B
+    JSR printChar
 
-  SET C, POP
-  SET PC, POP
+    SET C, POP
+    SET PC, POP
 
 :key_CharIn_bs
-  SUB [SCRN_LCN], 1
-  SET [SCRN_CHAR], 32    ; erase last entry
-  JSR printChar
-  SUB [SCRN_LCN], 1
-  SET PC, key_CharIn_loop
+    SET B, [SCRN_LCN]     ;check if first location
+    MOD B, 0x20
+    IFE B, 1
+        SET PC, key_CharIn_loop
+
+    SET [SCRN_CHAR], 32    ; erase cursor
+    JSR printChar
+    SUB [SCRN_LCN], 2
+    SET [SCRN_CHAR], 95   ;show cursor
+    JSR printChar
+    SUB [SCRN_LCN], 1
+    SET PC, key_CharIn_loop
+
+
+
+
 
 
 ;32bit MATH----------------------------
@@ -630,65 +681,389 @@ DAT " list of commands               ", 0
 ;stores result in MUL_ANS
 
 :MUL32
-  SET PUSH, I
-  SET PUSH, J
+      SET PUSH, I
+      SET PUSH, J
 
-  SET I, 1
-  SET J, 3
-  SET PUSH, [MATH1+I]
-  MUL [MATH1+I], [MATH2+I] ;multiply 1
-  SET [MUL_ANS+J], [MATH1+I]
-  SET [MATH1+I], POP
-  SET J, 2
-  SET [MUL_ANS+J], O
+      SET I, 1
+      SET J, 3
+      SET PUSH, [MATH1+I]
+      MUL [MATH1+I], [MATH2+I] ;multiply 1
+      SET [MUL_ANS+J], [MATH1+I]
+      SET [MATH1+I], POP
+      SET J, 2
+      SET [MUL_ANS+J], O
 
-  SET PUSH, [MATH1]
-  MUL [MATH1], [MATH2+I]   ;Multiply 2
-  SET [MUL_ANS+I], O
-  ADD [MUL_ANS+J], [MATH1]
-  SET [MATH1], POP
-  ADD [MUL_ANS+I], O
-  SET [MUL_ANS], O
+      SET PUSH, [MATH1]
+      MUL [MATH1], [MATH2+I]   ;Multiply 2
+      SET [MUL_ANS+I], O
+      ADD [MUL_ANS+J], [MATH1]
+      SET [MATH1], POP
+      ADD [MUL_ANS+I], O
+      SET [MUL_ANS], O
 
-  MUL [MATH1+I], [MATH2] ;MULTIPLY 3
-  ADD [MUL_ANS+I], O
-  ADD [MUL_ANS], O
-  ADD [MUL_ANS+J], [MATH1+I]
-  ADD [MUL_ANS+I], O
-  ADD [MUL_ANS], O
+      MUL [MATH1+I], [MATH2] ;MULTIPLY 3
+      ADD [MUL_ANS+I], O
+      ADD [MUL_ANS], O
+      ADD [MUL_ANS+J], [MATH1+I]
+      ADD [MUL_ANS+I], O
+      ADD [MUL_ANS], O
 
-  MUL [MATH1], [MATH2]  ;multiply 4
-  ADD [MUL_ANS], O
-  ADD [MUL_ANS+I], [MATH1]
-  ADD [MUL_ANS], O
+      MUL [MATH1], [MATH2]  ;multiply 4
+      ADD [MUL_ANS], O
+      ADD [MUL_ANS+I], [MATH1]
+      ADD [MUL_ANS], O
 
-  SET J, POP
-  SET I, POP
-  SET PC, POP
+      SET J, POP
+      SET I, POP
+      SET PC, POP
 
 
 ;MISC SUBROUTINES-------------------------------
 
 
-;waits B ms (assuming a 100kHz clock)
-; thats 100 cycles per B
-:waitBms
-  SET PUSH, A
+;sleeps system. takes SLEEP_DURATION as a parameter
+:SLEEP_DURATION RESERVE 1
+:sleep
+      SET PUSH, I
+      SET I, 0
+:sleep_loop
+      ADD I, 1
+      IFG I, [SLEEP_DURATION]
+          SET PC, sleep_done
+      SET PC, sleep_loop
+:sleep_done
+      SET i, POP
+      SET PC, POP
 
-:waitBms_loop1
-  IFE B, 0        ;2c
-      SET PC, waitBms_done
-  SUB B, 1        ;2c
-  SET A, 19     ; 1c
-:waitBms_loop2
-  SUB A, 1        ;2c
-  IFN A, 0        ;2c/3c
-      SET PC, waitBms_loop2   ;1c
-  SET PC, waitBms_loop1  ; 1c
 
-:waitBms_done
-  SET A, POP
-  SET PC, POP
+
+
+;MINECRAFT GAME FOR DCPU-16 by Pseudox/trevs231
+
+;A= nothing
+;B= prevents other buttons from messing up input
+;C= falling counter
+;X= helper
+;Y= are you placing or removing?
+;Z= input buffer
+;I= iterator
+;J= helper
+
+
+:MC_PLAYER_POS RESERVE 1
+:MC_SKY_CHAR DAT 0x0B00
+:MC_GROUND_CHAR DAT 0x862A
+:MC_PLAYER_CHAR DAT 0x1058
+
+:MC_FALL_TIME DAT 0x0500
+
+:MC_up_key DAT 0x0003    ;up arrow
+:MC_left_key DAT 0x0001    ;left arrow
+:MC_right_key DAT 0x0002   ;right arrow
+
+:MC_do_up_key DAT 0x0077    ;w
+:MC_do_down_key DAT 0x0073 ;s
+:MC_do_left_key DAT 0x0061    ;a
+:MC_do_right_key DAT 0x0064   ;d
+
+:MC_reset_key DAT 0x0072 ;r
+:MC_quit_key DAT 0x0070 ;p
+
+
+
+
+
+:MINECRAFT_init
+    SET PUSH, B
+    SET PUSH, C
+    SET PUSH, X
+    SET PUSH, Y
+    SET PUSH, Z
+    SET PUSH, I
+    SET PUSH, J
+
+:MC_reset_point
+    SET z, [KBRD_BUFFER] ;initialize input buffer
+    SET [z], 0
+
+    SET x, [SCRN_START]
+    SET C, [MC_FALL_TIME]
+    SET J, x
+    ADD j, 0x100
+:MINECRAFT_init_loop1
+    SET [x], [MC_SKY_CHAR]
+    ADD x, 1
+    IFG j, x
+        SET PC, MINECRAFT_init_loop1
+
+    SET J, [SCRN_END]
+    ADD j, 1
+:MINECRAFT_init_loop2
+    SET [x], [MC_GROUND_CHAR]
+    ADD x, 1
+    IFG j, x
+        SET PC, MINECRAFT_init_loop2
+
+     ;initialize player
+    SET [MC_PLAYER_POS], [SCRN_START]
+    ADD [MC_PLAYER_POS], 0xF0
+
+    JSR MC_print_player
+
+    SET B, 0x100
+
+
+:MC_game_loop
+    JSR MC_in_air_check
+
+    IFE [z],  [MC_up_key]
+        JSR MC_jump
+    IFE [z], [MC_left_key]
+        JSR MC_move_left
+    IFE [z], [MC_right_key]
+        JSR MC_move_right
+
+    IFE [z], [MC_do_up_key]
+        JSR MC_do_up
+    IFE [z], [MC_do_down_key]
+        JSR MC_do_down
+    IFE [z], [MC_do_left_key]
+        JSR MC_do_left
+    IFE [z], [MC_do_right_key]
+        JSR MC_do_right
+
+    IFE [z], [MC_reset_key]
+        SET PC, MC_reset_game
+
+    IFE [z], [MC_quit_key]
+        SET PC, MC_game_exit
+
+    SUB B, 1
+    IFE B, 0
+        JSR MC_reset_input
+
+    SET PC, MC_game_loop
+
+:MC_game_exit
+    SET [z], 0
+    SET J, POP
+    SET I, POP
+    SET Z, POP
+    SET Y, POP
+    SET X, POP
+    SET C, POP
+    SET B, POP
+    SET PC, POP
+
+
+:MC_reset_input   ;prevents input buffer from getting full
+    SET [z], 0     ;while preventing issues with input
+    SET B, 0x100
+    SET PC, POP
+
+
+
+
+:MC_jump
+    SET [z], 0
+    IFG [MC_FALL_TIME], C   ;can't if in the air
+        SET PC, POP
+    SET J, [MC_PLAYER_POS]
+    SET X, [MC_PLAYER_POS]
+    SUB J, 0x20
+    IFG [SCRN_START], j       ;at the top?
+        SET PC, POP
+    IFE [j], [MC_GROUND_CHAR]  ;ground above?
+        SET PC, POP
+    SET [X], [MC_SKY_CHAR]
+    SET [MC_PLAYER_POS], j
+    JSR MC_print_player
+    SUB C, 1
+    SET PC, POP
+
+
+:MC_move_left
+    SET [z], 0
+    SET j, [MC_PLAYER_POS]
+    MOD j, 0x20
+    IFE j, 0
+        SET PC, MC_wrap_left       ;at left edge?
+
+    SET J, [MC_PLAYER_POS]
+    SUB j, 1
+    IFE [j], [MC_GROUND_CHAR]      ;ground there?
+        SET PC, POP
+
+    SET j, [MC_PLAYER_POS]
+    SET [j], [MC_SKY_CHAR]
+    SUB [MC_PLAYER_POS], 1
+    JSR MC_print_player
+    SET PC, POP
+
+:MC_wrap_left
+    SET J, [MC_PLAYER_POS]
+    ADD J, 0x1F
+    IFE [j], [MC_GROUND_CHAR]       ;ground there?
+        SET PC, POP
+    SET X, [MC_PLAYER_POS]
+    SET [x], [MC_SKY_CHAR]
+    SET [MC_PLAYER_POS], j
+    JSR MC_print_player
+    SET PC, POP
+
+:MC_move_right
+    SET [z], 0
+    SET j, [MC_PLAYER_POS]
+    MOD j, 0x20
+    IFE j, 0x1F                      ;at right edge?
+        SET PC, MC_wrap_right
+
+    SET J, [MC_PLAYER_POS]
+    ADD j, 1
+    IFE [j], [MC_GROUND_CHAR]     ;ground there?
+        SET PC, POP
+
+    SET j, [MC_PLAYER_POS]
+    SET [j], [MC_SKY_CHAR]
+    ADD [MC_PLAYER_POS], 1
+    JSR MC_print_player
+    SET PC, POP
+
+
+:MC_wrap_right
+    SET J, [MC_PLAYER_POS]
+    SUB J, 0x1F
+    IFE [J], [MC_GROUND_CHAR]       ;ground there?
+        SET PC, POP
+    SET X, [MC_PLAYER_POS]
+    SET [x], [MC_SKY_CHAR]
+    SET [MC_PLAYER_POS], j
+    JSR MC_print_player
+    SET PC, POP
+
+:MC_do_up
+    SET [z], 0
+    SET J, [MC_PLAYER_POS]
+    SUB J, 0x20
+    IFG [SCRN_START], j       ;at the top?
+        SET PC, POP
+
+    IFE [j], [MC_GROUND_CHAR]      ;is it ground?
+        SET PC, MC_do_is_ground
+    SET [j], [MC_GROUND_CHAR]
+
+    SET PC, POP
+
+:MC_do_down
+    SET [z], 0
+    SET J, [MC_PLAYER_POS]
+    ADD J, 0x20
+    IFG J, [SCRN_END]      ;at the bottom?
+        SET PC, POP
+
+    IFE [j], [MC_GROUND_CHAR]      ;is it ground?
+        SET PC, MC_do_is_ground
+    SET [j], [MC_GROUND_CHAR]
+
+    SET PC, POP
+
+:MC_do_left
+    SET [z], 0
+    SET j, [MC_PLAYER_POS]
+    MOD j, 0x20
+    IFE j, 0x0                      ;at left edge?
+        SET PC, MC_do_wrap_left
+
+    SET J, [MC_PLAYER_POS]
+    SUB j, 1
+    IFE [j], [MC_GROUND_CHAR]     ;ground there?
+        SET PC, MC_do_is_ground
+    SET [j], [MC_GROUND_CHAR]
+
+    SET PC, POP
+
+
+:MC_do_wrap_left
+    SET J, [MC_PLAYER_POS]
+    ADD J, 0x1F
+
+    IFE [J], [MC_GROUND_CHAR]       ;ground there?
+        SET PC, MC_do_is_ground
+    SET [j], [MC_GROUND_CHAR]
+
+    SET PC, POP
+
+
+:MC_do_right
+    SET [z], 0
+    SET j, [MC_PLAYER_POS]
+    MOD j, 0x20
+    IFE j, 0x1F                      ;at right edge?
+        SET PC, MC_do_wrap_right
+
+    SET J, [MC_PLAYER_POS]
+    ADD j, 1
+    IFE [j], [MC_GROUND_CHAR]     ;ground there?
+        SET PC, MC_do_is_ground
+    SET [j], [MC_GROUND_CHAR]
+
+    SET PC, POP
+
+
+:MC_do_wrap_right
+    SET J, [MC_PLAYER_POS]
+    SUB J, 0x1F
+
+    IFE [J], [MC_GROUND_CHAR]       ;ground there?
+        SET PC, MC_do_is_ground
+    SET [j], [MC_GROUND_CHAR]
+
+    SET PC, POP
+
+:MC_do_is_ground
+    SET [j], [MC_SKY_CHAR]
+
+    SET PC, POP
+
+:MC_reset_game
+    SET [z], 0
+    SET PC, MC_reset_point
+
+:MC_in_air_check
+    SET X, [MC_PLAYER_POS]
+    ADD X, 0x20
+    IFE [x], [MC_GROUND_CHAR]    ;ground below?
+        SET PC, MC_in_air_check_on_ground
+    IFG x, [SCRN_END]            ;at bottom?
+        SET PC, POP
+    SUB C, 1
+    IFN C, 0                      ;time up?
+        SET PC, POP
+;dont put anything here
+:MC_fall
+    SET x, [MC_PLAYER_POS]
+    SET [x], [MC_SKY_CHAR]
+    ADD [MC_PLAYER_POS], 0x20
+    SET C, [MC_FALL_TIME]
+    JSR MC_print_player
+    SET PC, POP
+
+ :MC_in_air_check_on_ground
+    SET C, [MC_FALL_TIME]
+    SET PC, POP
+
+
+
+:MC_print_player
+    SET X, [MC_PLAYER_POS]
+    SET j, [MC_SKY_CHAR]
+    BOR j, [MC_PLAYER_CHAR]
+    SET [x], j
+    SET PC, POP
+
+
+
+
 
 
 
