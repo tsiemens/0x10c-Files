@@ -1,10 +1,10 @@
-Repo for files I've written for 0x10c
-All files are in the public domain. Credit would be nice though.
+Repo for files I've written for 0x10c DCPU-16
+All files are in the public domain.
 
 0x64c.dasm16 :
 	A simple command line/ pseudo OS. It can be used to launch any 
-	subroutine that keeps the stack and most regiters in tact.
-	**It includes the minecraft game, pre-installed.
+	subroutine that keeps the stack and most registers in tact.
+	**Includes the minecraft game, pre-installed.
 
 minecraft.dasm16 :
 	A 2D sim of minecraft. Resembles Terraria. 

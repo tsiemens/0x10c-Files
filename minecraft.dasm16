@@ -1,5 +1,5 @@
 ; minecraft.dasm16
-; v1.2
+; v1.5
 ; Created by Pseudox/trevs231
 
     SET PC, main_inits
@@ -38,31 +38,112 @@
 
 :KBRD_BUFFER DAT 0x9000  ;where inputs are read from keyboard
 
+:HEAPARR    DAT 0x9100    ; that starting pointer for the heap for malloc
+:HEAP       DAT 0x9200    ; start of the stack of memory addresses
 
 
-;MINECRAFT GAME FOR DCPU-16 v1.0 by Pseudox/trevs231
 
-;A= nothing
+
+;===============================================================
+;MEMORY ALLOCATION SUBROUTINES
+;===============================================================
+
+; https://github.com/ryban/DCPPU16
+; Author: Ryban
+
+; Returns pointers to 64 word chunks
+; maintain a 256 word list of empty 64 word chunks
+; when you need a new one you loop through the 256 word list until you find an empty one
+; Multiply the index of that marker (from the 256 word array) by 64 to get the address
+
+; the value returned in A is a pointer to the start of the memory
+
+:malloc
+    SET PUSH, B
+    SET PUSH, C
+    SET A, 0
+    SET B, [HEAPARR]
+
+:maloc_l4
+    SET C, [B]
+    IFE C, 0
+        SET PC, maloc_found
+    IFG A, 0xff            ; A > 255
+        SET PC, maloc_full
+
+    ADD A, 1
+    ADD B, 1
+    SET PC, maloc_l4
+
+:maloc_found
+;    ADD B, A
+    SET [B], 0xffff        ; mark chunk taken
+    MUL A, 0x40            ; A * 64
+    SET B, [HEAP]
+    ADD A, B
+
+    SET C, POP
+    SET B, POP
+    SET PC, POP
+:maloc_full
+    SET A, 0x2000        ; A hopefully harmless area...
+    SET C, POP
+    SET B, POP
+    SET PC, POP
+
+;=================================================================
+
+; Author: Ryban
+; releases memory given by malloc.
+; This IS NOT automatically done, be sure to free memory when you are done
+; A is the pointer to your memory chunk to be freed
+
+:free
+    SET PUSH, B
+
+    SET B, [HEAP]
+    SUB A, B
+    DIV A, 64
+    SET B, [HEAPARR]
+    ADD A, B
+    SET [A], 0
+
+    SET B, POP
+    SET PC, POP
+
+;==================================================================
+
+
+
+;============================================================
+;MINECRAFT GAME FOR DCPU-16 v1.5 by Pseudox/trevs231
+;============================================================
+
+;A= used in maloc and free
 ;B= prevents other buttons from messing up input
 ;C= falling counter
 ;X= helper
-;Y= are you placing or removing?
+;Y= water flow timer?
 ;Z= input buffer
-;I= iterator
+;I= helper
 ;J= helper
 
+;====================================================
+;Variables and constants
 
 :MC_PLAYER_POS RESERVE 1
 
 :MC_CURRENT_BLOCK RESERVE 1
 
 :MC_SKY_CHAR DAT 0x0B00
-:MC_BLOCK_CHARS DAT 0x862A, 0x0200, 0x0800, 0x0600
+:MC_WATER_CHAR DAT 0x0100
+:MC_BLOCK_CHARS DAT 0x182A, 0x862A, 0x0200, 0x0800, 0x0600
                 DAT 0x782A, 0xE82A, 0xC82A, 0xB82A, 0
-; sky, dirt, grass, rock, cobblestone, wood, gold deposit
+; water source, dirt, grass, rock, cobblestone, wood, gold deposit
 ; redstone, diamond,
 
-:MC_PLAYER_CHAR DAT 0x1058
+
+:MC_PLAYER_CHAR DAT 0x4058
 
 :MC_FALL_TIME DAT 0x0500
 
@@ -82,7 +163,7 @@
 
 
 
-
+;=====================================================
 
 :MINECRAFT_init
     SET PUSH, B
@@ -98,7 +179,8 @@
     SET [z], 0
 
     SET x, [SCRN_START]
-    SET C, [MC_FALL_TIME]
+    SET C, [MC_FALL_TIME]     ;for fall speed
+    SET Y, [MC_FALL_TIME]     ;for water flow speed
     SET J, x
     ADD j, 0x100
 :MINECRAFT_init_loop1
@@ -108,7 +190,7 @@
         SET PC, MINECRAFT_init_loop1
 
     ADD j, 0x20
-    SET i, 1
+    SET i, 2
 :MINECRAFT_init_loop2
     SET [x], [MC_BLOCK_CHARS+i]
     ADD x, 1
@@ -116,22 +198,24 @@
         SET PC, MINECRAFT_init_loop2
 
     ADD j, 0x40
+    SET i, 1
 :MINECRAFT_init_loop3
-    SET [x], [MC_BLOCK_CHARS]
+    SET [x], [MC_BLOCK_CHARS+i]
     ADD x, 1
     IFG j, x
         SET PC, MINECRAFT_init_loop3
 
     SET j, [SCRN_END]
     ADD j, 0x1
-    SET i, 2
+    SET i, 3
 :MINECRAFT_init_loop4
     SET [x], [MC_BLOCK_CHARS+i]
     ADD x, 1
     IFG j, x
         SET PC, MINECRAFT_init_loop4
 
-    SET [MC_CURRENT_BLOCK], [MC_BLOCK_CHARS]    ;show current block
+    SET i, 1
+    SET [MC_CURRENT_BLOCK], [MC_BLOCK_CHARS+i]    ;show current block
     SET x, [SCRN_START]
     SET [x], [MC_CURRENT_BLOCK]
 
@@ -144,8 +228,10 @@
     SET B, 0x100
 
 
+;===========================================================
 :MC_game_loop
     JSR MC_in_air_check
+    JSR MC_water_flow
 
     IFE [z],  [MC_up_key]
         JSR MC_jump
@@ -178,6 +264,7 @@
 
     SET PC, MC_game_loop
 
+;===================================================
 :MC_game_exit
     SET [z], 0
     SET J, POP
@@ -189,64 +276,76 @@
     SET B, POP
     SET PC, POP
 
-
-:MC_reset_input   ;prevents input buffer from getting full
-    SET [z], 0     ;while preventing issues with input
+;=====================================================
+;prevents input buffer from getting full
+;while preventing issues with input
+:MC_reset_input
+    SET [z], 0
     SET B, 0x100
     SET PC, POP
 
 
 
-
+;=====================================================
 :MC_jump
     SET [z], 0
-    IFG [MC_FALL_TIME], C   ;can't if in the air
-        SET PC, POP
+:MC_jump_water
     SET J, [MC_PLAYER_POS]
     SET X, [MC_PLAYER_POS]
     SUB J, 0x20
     IFG [SCRN_START], j       ;at the top?
         SET PC, POP
+    IFE [j], [MC_WATER_CHAR]
+        SET PC, MC_jump2
     IFN [j], [MC_SKY_CHAR]  ;block above?
         SET PC, POP
-    SET [X], [MC_SKY_CHAR]
+    IFG [MC_FALL_TIME], C   ;can't if in the air
+        SET PC, POP
+:MC_jump2
+    AND [X], 0x0F00
     SET [MC_PLAYER_POS], j
     JSR MC_print_player
     SUB C, 1
     SET PC, POP
 
-
+;=====================================================
 :MC_move_left
     SET [z], 0
     SET j, [MC_PLAYER_POS]
+    SET x, [MC_PLAYER_POS]
     MOD j, 0x20
     IFE j, 0
         SET PC, MC_wrap_left       ;at left edge?
 
     SET J, [MC_PLAYER_POS]
     SUB j, 1
-    IFN [j], [MC_SKY_CHAR]      ;block there?
+    IFE [j], [MC_SKY_CHAR]  ;block above?
+        SET PC, MC_move_left2
+    IFN [j], [MC_WATER_CHAR]
         SET PC, POP
-
-    SET j, [MC_PLAYER_POS]
-    SET [j], [MC_SKY_CHAR]
-    SUB [MC_PLAYER_POS], 1
+:MC_move_left2
+    AND [X], 0x0F00
+    SET [MC_PLAYER_POS], j
     JSR MC_print_player
     SET PC, POP
 
 :MC_wrap_left
     SET J, [MC_PLAYER_POS]
     ADD J, 0x1F
-    IFN [j], [MC_SKY_CHAR]       ;block there?
+    IFE [j], [MC_SKY_CHAR]  ;block above?
+        SET PC, MC_move_leftw2
+    IFN [j], [MC_WATER_CHAR]
         SET PC, POP
-    SET X, [MC_PLAYER_POS]
-    SET [x], [MC_SKY_CHAR]
+:MC_move_leftw2
+    AND [X], 0x0F00
     SET [MC_PLAYER_POS], j
     JSR MC_print_player
     SET PC, POP
 
+;====================================================
 :MC_move_right
     SET [z], 0
+    SET x, [MC_PLAYER_POS]
     SET j, [MC_PLAYER_POS]
     MOD j, 0x20
     IFE j, 0x1F                      ;at right edge?
@@ -254,12 +353,13 @@
 
     SET J, [MC_PLAYER_POS]
     ADD j, 1
-    IFN [j], [MC_SKY_CHAR]     ;block there?
+    IFE [j], [MC_SKY_CHAR]  ;block above?
+        SET PC, MC_move_right2
+    IFN [j], [MC_WATER_CHAR]
         SET PC, POP
-
-    SET j, [MC_PLAYER_POS]
-    SET [j], [MC_SKY_CHAR]
-    ADD [MC_PLAYER_POS], 1
+:MC_move_right2
+    AND [X], 0x0F00
+    SET [MC_PLAYER_POS], j
     JSR MC_print_player
     SET PC, POP
 
@@ -267,14 +367,17 @@
 :MC_wrap_right
     SET J, [MC_PLAYER_POS]
     SUB J, 0x1F
-    IFN [J], [MC_SKY_CHAR]       ;block there?
+    IFE [j], [MC_SKY_CHAR]  ;block above?
+        SET PC, MC_move_rightw2
+    IFN [j], [MC_WATER_CHAR]
         SET PC, POP
-    SET X, [MC_PLAYER_POS]
-    SET [x], [MC_SKY_CHAR]
+:MC_move_rightw2
+    AND [X], 0x0F00
     SET [MC_PLAYER_POS], j
     JSR MC_print_player
     SET PC, POP
 
+;======================================================
 :MC_do_up
     SET [z], 0
     SET J, [MC_PLAYER_POS]
@@ -290,6 +393,7 @@
 
     SET PC, POP
 
+;======================================================
 :MC_do_down
     SET [z], 0
     SET J, [MC_PLAYER_POS]
@@ -303,6 +407,7 @@
 
     SET PC, POP
 
+;======================================================
 :MC_do_left
     SET [z], 0
     SET j, [MC_PLAYER_POS]
@@ -332,7 +437,7 @@
 
     SET PC, POP
 
-
+;======================================================
 :MC_do_right
     SET [z], 0
     SET j, [MC_PLAYER_POS]
@@ -361,12 +466,13 @@
 
     SET PC, POP
 
+;======================================================
 :MC_do_is_block
     SET [j], [MC_SKY_CHAR]
 
     SET PC, POP
 
-
+;======================================================
 :MC_swap_item
     SET [z], 0
     SET j, MC_BLOCK_CHARS
@@ -390,25 +496,35 @@
     SET [x], [MC_CURRENT_BLOCK]
     SET PC, POP
 
-
+;======================================================
 :MC_reset_game
     SET [z], 0
     SET PC, MC_reset_point
 
+;======================================================
+;checks if player is in the air
 :MC_in_air_check
     SET X, [MC_PLAYER_POS]
     ADD X, 0x20
-    IFN [x], [MC_SKY_CHAR]    ;ground below?
-        SET PC, MC_in_air_check_on_ground
+
     IFG x, [SCRN_END]            ;at bottom?
         SET PC, POP
+
+    IFE [x], [MC_SKY_CHAR]    ;ground below?
+        SET PC, MC_in_air
+    IFE [x], [MC_WATER_CHAR]
+        SET PC, MC_in_air
+    SET C, [MC_FALL_TIME]
+    SET PC, pop
+
+:MC_in_air
     SUB C, 1
     IFN C, 0                      ;time up?
         SET PC, POP
 ;dont put anything here
 :MC_fall
     SET x, [MC_PLAYER_POS]
-    SET [x], [MC_SKY_CHAR]
+    AND [x], 0x0F00
     ADD [MC_PLAYER_POS], 0x20
     SET C, [MC_FALL_TIME]
     JSR MC_print_player
@@ -419,17 +535,129 @@
     SET PC, POP
 
 
-
+;======================================================
 :MC_print_player
     SET X, [MC_PLAYER_POS]
-    SET j, [MC_SKY_CHAR]
-    BOR j, [MC_PLAYER_CHAR]
-    SET [x], j
+    BOR [x], [MC_PLAYER_CHAR]
+    SET PC, POP
+
+;======================================================
+:MC_water_flow
+    IFE Y, 0
+       SET PC, MC_water_check
+    SUB Y, 1                        ;only does this every so often
+    SET PC, POP
+
+:MC_water_check
+    JSR malloc
+    SET j, a
+    SET PUSH, a                    ;a contains pointer to dynamic mem
+    SET i, [SCRN_START]
+    ADD i, 1
+:MC_water_check_loop
+
+
+    IFE [i], [MC_BLOCK_CHARS]       ;are there any sources or water?
+        JSR MC_flow
+    SET a, [i]
+    AND a, 0x0F00
+    IFE a, [MC_WATER_CHAR]
+        JSR MC_flow
+    ADD i, 1
+    IFG [SCRN_END], i
+        SET PC, MC_water_check_loop
+
+    SET [j], 0
+    SET A, POP           ;making sure last entry is zero
+    SET j, a
+:MC_water_print_loop
+    SET i, [j]
+    IFE i, 0
+        SET PC, MC_flow_done
+    AND [i], 0xF0FF
+    BOR [i], [MC_WATER_CHAR]
+    ADD j, 1
+    SET PC, MC_water_print_loop
+
+:MC_flow_done
+    JSR free
+    SET Y, [MC_FALL_TIME]
     SET PC, POP
 
 
 
+:MC_flow_save
+    SET [j], x         ;saves location on screen
+    ADD j, 1
+    SET PC, POP
 
+;=====================================================
+:MC_flow
+    SET x, i
+    ADD x, 0x20
+    IFG x, [SCRN_END]       ;at bottom?
+        SET PC, MC_flow_left
+    SET a, [x]
+    AND a, 0x0F00
+    IFE a, [MC_SKY_CHAR]   ;block below?
+        JSR MC_flow_save
+
+
+:MC_flow_left
+    SET x, i
+    MOD x, 0x20
+    IFE x, 0x0                      ;at left edge?
+        SET PC, MC_flow_wrap_left
+
+    SET x, i
+    SUB x, 1
+    IFE x, [SCRN_START]       ;current block?
+        SET PC, MC_flow_right
+
+    SET a, [x]
+    AND a, 0x0F00
+    IFE a, [MC_SKY_CHAR]   ;block below?
+        JSR MC_flow_save
+
+    SET PC, MC_flow_right
+
+:MC_flow_wrap_left
+    SET x, i
+    ADD x, 0x1F
+
+    SET a, [x]
+    AND a, 0x0F00
+    IFE a, [MC_SKY_CHAR]   ;block below?
+        JSR MC_flow_save
+
+:MC_flow_right
+    SET x, i
+    MOD x, 0x20
+    IFE x, 0x1F                      ;at right edge?
+        SET PC, MC_flow_wrap_right
+
+    SET x, i
+    ADD x, 1
+    SET a, [x]
+    AND a, 0x0F00
+    IFE a, [MC_SKY_CHAR]   ;block below?
+        JSR MC_flow_save
+
+    SET PC, POP
+
+:MC_flow_wrap_right
+    SET x, i
+    SUB x, 0x1F
+    IFE x, [SCRN_START]       ;current block?
+        SET PC, POP
+
+    SET a, [x]
+    AND a, 0x0F00
+    IFE a, [MC_SKY_CHAR]   ;block below?
+        JSR MC_flow_save
+
+    SET PC, POP
+;==============================================================
 
 
 
